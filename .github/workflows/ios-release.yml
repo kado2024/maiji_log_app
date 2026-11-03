@@ -25,7 +25,7 @@ env:
 
 jobs:
   ios:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +34,9 @@ jobs:
         with:
           flutter-version: 3.47.9
           channel: stable
+
+      - name: Show Xcode version
+        run: xcodebuild -version
 
       - run: flutter pub get
       - run: flutter analyze
