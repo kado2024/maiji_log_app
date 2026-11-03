@@ -44,7 +44,7 @@ https://appstoreconnect.apple.com → アプリ → ＋ → 新規App
 ## 5. App Store Connect API キーを作る
 
 App Store Connect → ユーザとアクセス → 統合 → App Store Connect API → チームキー → ＋
-- アクセス：**App Manager**
+- アクセス：**Admin**（配布用署名をクラウドで行うために必要。App Manager では署名できません）
 - 作成後、**.p8 ファイルをダウンロード**（1回しかダウンロードできません）
 - 「キーID」と「Issuer ID」を控える
 

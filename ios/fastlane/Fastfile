@@ -1,7 +1,7 @@
 # Build, sign (automatic, via App Store Connect API key) and upload 毎時ログ.
 #
 # Required environment variables:
-#   ASC_KEY_ID, ASC_ISSUER_ID  App Store Connect API key (role: App Manager or Admin)
+#   ASC_KEY_ID, ASC_ISSUER_ID  App Store Connect API key (role: Admin — needed for cloud-managed distribution signing)
 #   ASC_KEY_PATH               path to the AuthKey_XXXX.p8 file
 #   APPLE_TEAM_ID              10-character Apple Developer Team ID
 # Run `flutter build ios --release --no-codesign` first (the CI workflow does this).
