@@ -1,2 +1,2 @@
-app_identifier("com.maijilog.app") # change together with PRODUCT_BUNDLE_IDENTIFIER
+app_identifier("com.kado2024.maijilog") # change together with PRODUCT_BUNDLE_IDENTIFIER
 team_id(ENV["APPLE_TEAM_ID"])

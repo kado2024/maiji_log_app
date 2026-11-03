@@ -13,10 +13,10 @@ iOSアプリのビルドと提出には **macOS（Xcode）** と **Apple Develop
 
 ## 1. Bundle ID を決める
 
-初期値は `com.maijilog.app` です。すでに他の人が使っていると登録できないので、自分のものに変えます（例：`com.あなたの名前.maijilog`）。
+初期値は `com.kado2024.maijilog` です。すでに他の人が使っていると登録できないので、自分のものに変えます（例：`com.あなたの名前.maijilog`）。
 
 ```bash
-grep -rl "com.maijilog.app" ios | xargs sed -i '' 's/com\.maijilog\.app/com.yourname.maijilog/g'
+grep -rl "com.kado2024.maijilog" ios | xargs sed -i "" "s/com\.kado2024\.maijilog/com.yourname.maijilog/g"
 ```
 
 （Linux の場合は `sed -i ''` を `sed -i` に）
