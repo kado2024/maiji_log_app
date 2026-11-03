@@ -1,0 +1,67 @@
+# Build, sign (automatic, via App Store Connect API key) and upload 毎時ログ.
+#
+# Required environment variables:
+#   ASC_KEY_ID, ASC_ISSUER_ID  App Store Connect API key (role: App Manager or Admin)
+#   ASC_KEY_PATH               path to the AuthKey_XXXX.p8 file
+#   APPLE_TEAM_ID              10-character Apple Developer Team ID
+# Run `flutter build ios --release --no-codesign` first (the CI workflow does this).
+default_platform(:ios)
+
+platform :ios do
+  def api_key
+    app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_filepath: ENV.fetch("ASC_KEY_PATH"),
+    )
+  end
+
+  def signing_args
+    "-allowProvisioningUpdates " \
+      "-authenticationKeyPath #{ENV.fetch('ASC_KEY_PATH')} " \
+      "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')} " \
+      "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
+  end
+
+  desc "Archive and export a signed .ipa"
+  lane :build do
+    build_app(
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "../build/ios/ipa",
+      output_name: "maiji_log.ipa",
+      xcargs: "#{signing_args} DEVELOPMENT_TEAM=#{ENV.fetch('APPLE_TEAM_ID')} CODE_SIGN_STYLE=Automatic",
+      export_xcargs: signing_args,
+      export_options: { signingStyle: "automatic", teamID: ENV.fetch("APPLE_TEAM_ID") },
+    )
+  end
+
+  desc "Upload a build to TestFlight"
+  lane :beta do
+    key = api_key
+    build
+    upload_to_testflight(api_key: key, skip_waiting_for_build_processing: true)
+  end
+
+  desc "Upload build + store listing + screenshots; submit for review when SUBMIT=true"
+  lane :release do
+    key = api_key
+    build
+    upload_to_app_store(
+      api_key: key,
+      force: true,
+      metadata_path: "./fastlane/metadata",
+      screenshots_path: "./fastlane/screenshots",
+      overwrite_screenshots: true,
+      run_precheck_before_submit: false,
+      submit_for_review: ENV["SUBMIT"] == "true",
+      automatic_release: false,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        export_compliance_uses_encryption: false,
+      },
+    )
+  end
+end
