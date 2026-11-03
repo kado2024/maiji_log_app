@@ -1,12 +1,12 @@
 name: iOS release
 
-# Start a run either from the Actions tab, or by pushing a tag:
-#   testflight-<anything>  -> TestFlight upload
-#   appstore-<anything>    -> App Store upload (listing + screenshots), no review submission
-#   submit-<anything>      -> App Store upload and submit for App Review
+# Start a run either from the Actions tab, or by pushing to one of these branches:
+#   release/testflight  -> TestFlight upload
+#   release/appstore    -> App Store upload (listing + screenshots), no review submission
+#   release/submit      -> App Store upload and submit for App Review
 on:
   push:
-    tags: ["testflight-*", "appstore-*", "submit-*"]
+    branches: ["release/testflight", "release/appstore", "release/submit"]
   workflow_dispatch:
     inputs:
       lane:
@@ -20,8 +20,8 @@ on:
         default: false
 
 env:
-  LANE: ${{ github.event_name == 'push' && (startsWith(github.ref_name, 'testflight-') && 'beta' || 'release') || inputs.lane }}
-  SUBMIT: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'submit-') || inputs.submit == true }}
+  LANE: ${{ github.event_name == 'push' && (github.ref_name == 'release/testflight' && 'beta' || 'release') || inputs.lane }}
+  SUBMIT: ${{ github.event_name == 'push' && github.ref_name == 'release/submit' || inputs.submit == true }}
 
 jobs:
   ios:
