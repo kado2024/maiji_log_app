@@ -33,7 +33,7 @@ platform :ios do
       output_directory: "../build/ios/ipa",
       output_name: "maiji_log.ipa",
       xcargs: "#{signing_args} DEVELOPMENT_TEAM=#{ENV.fetch('APPLE_TEAM_ID')} CODE_SIGN_STYLE=Automatic",
-      export_xcargs: signing_args,
+      # gym also passes xcargs to the export step, so the signing args must not be repeated there.
       export_options: { signingStyle: "automatic", teamID: ENV.fetch("APPLE_TEAM_ID") },
     )
   end
