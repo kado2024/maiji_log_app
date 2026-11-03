@@ -30,6 +30,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check App Store Connect API key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          # Prints only facts about the key, never the key itself.
+          if [ "$ASC_KEY_ID" = "5GBDQQ6X69" ]; then
+            echo "::error::ASC_KEY_ID is still the old App Manager key (5GBDQQ6X69). Register the Admin key."
+            exit 1
+          fi
+          echo "ASC_KEY_ID length: ${#ASC_KEY_ID}, first two chars: ${ASC_KEY_ID:0:1} ${ASC_KEY_ID:1:1}"
+          echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/check.p8"
+          if openssl pkey -in "$RUNNER_TEMP/check.p8" -noout 2>/dev/null; then echo "p8 key: valid private key"; else echo "::error::ASC_KEY_P8_BASE64 is not a valid .p8 key"; exit 1; fi
+          rm -f "$RUNNER_TEMP/check.p8"
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.9
