@@ -21,13 +21,9 @@ grep -rl "com.kado2024.maijilog" ios | xargs sed -i "" "s/com\.kado2024\.maijilo
 
 （Linux の場合は `sed -i ''` を `sed -i` に）
 
-## 2. GitHub に置いて、サポートページとプライバシーポリシーを公開する
+## 2. サポートページとプライバシーポリシー
 
-1. このフォルダを GitHub の新しいリポジトリ（名前：`maiji_log_app`）に push
-2. `docs/privacy.html` と `docs/support.html` の `CONTACT_EMAIL` を、問い合わせ用メールアドレスに書き換える
-3. リポジトリの Settings → Pages → Branch を `main` / `/docs` にして保存
-4. `ios/fastlane/metadata/ja/privacy_url.txt` と `support_url.txt` の `YOUR_GITHUB_NAME` を自分のユーザー名に書き換える
-5. ブラウザで `https://ユーザー名.github.io/maiji_log_app/privacy.html` が開くことを確認
+`docs/privacy.md` と `docs/support.md` は GitHub 上でそのまま公開され、ストア掲載文の URL（`ios/fastlane/metadata/ja/*_url.txt`）もそこを指しています。問い合わせ先は GitHub Issues です。追加の作業はありません。
 
 ## 3. Apple Developer で App ID を登録
 

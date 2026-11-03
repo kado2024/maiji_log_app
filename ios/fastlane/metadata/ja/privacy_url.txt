@@ -1,1 +1,1 @@
-https://kado2024.github.io/maiji_log_app/privacy.html
+https://github.com/kado2024/maiji_log_app/blob/main/docs/privacy.md
