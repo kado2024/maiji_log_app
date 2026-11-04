@@ -53,7 +53,17 @@ platform :ios do
     UI.user_error!("App #{bundle_id} not found in App Store Connect") unless app
 
     group = app.get_beta_groups.find { |g| g.name == "自分" }
-    group ||= app.create_beta_group(group_name: "自分", is_internal_group: true, has_access_to_all_builds: true)
+    unless group
+      # fastlane's create_beta_group also sends public-link fields, which Apple rejects for internal groups.
+      Spaceship::ConnectAPI.client.test_flight_request_client.post("v1/betaGroups", {
+        data: {
+          type: "betaGroups",
+          attributes: { name: "自分", isInternalGroup: true, hasAccessToAllBuilds: true },
+          relationships: { app: { data: { type: "apps", id: app.id } } },
+        },
+      })
+      group = app.get_beta_groups.find { |g| g.name == "自分" }
+    end
     UI.success("Internal group: #{group.name} (all builds: #{group.has_access_to_all_builds})")
 
     Spaceship::ConnectAPI::User.all.each do |u|
