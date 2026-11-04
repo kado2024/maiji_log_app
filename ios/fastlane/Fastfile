@@ -45,6 +45,32 @@ platform :ios do
     upload_to_testflight(api_key: key, skip_waiting_for_build_processing: true)
   end
 
+  desc "Create an internal TestFlight group that gets every build, and add all team users to it"
+  lane :testers do
+    api_key
+    bundle_id = CredentialsManager::AppfileConfig.try_fetch_value(:app_identifier)
+    app = Spaceship::ConnectAPI::App.find(bundle_id)
+    UI.user_error!("App #{bundle_id} not found in App Store Connect") unless app
+
+    group = app.get_beta_groups.find { |g| g.name == "自分" }
+    group ||= app.create_beta_group(group_name: "自分", is_internal_group: true, has_access_to_all_builds: true)
+    UI.success("Internal group: #{group.name} (all builds: #{group.has_access_to_all_builds})")
+
+    Spaceship::ConnectAPI::User.all.each do |u|
+      email = u.email || u.username
+      next if email.to_s.empty?
+      begin
+        Spaceship::ConnectAPI.post_beta_tester_assignment(
+          beta_group_ids: [group.id],
+          attributes: { email: email, firstName: u.first_name.to_s, lastName: u.last_name.to_s },
+        )
+        UI.success("Added tester: #{u.first_name} #{u.last_name}")
+      rescue => e
+        UI.important("Tester #{u.first_name} #{u.last_name}: #{e.message.lines.first&.strip}")
+      end
+    end
+  end
+
   desc "Upload build + store listing + screenshots; submit for review when SUBMIT=true"
   lane :release do
     key = api_key
