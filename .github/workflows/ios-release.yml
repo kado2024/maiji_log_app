@@ -78,6 +78,10 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          REVIEW_FIRST_NAME: ${{ secrets.REVIEW_FIRST_NAME }}
+          REVIEW_LAST_NAME: ${{ secrets.REVIEW_LAST_NAME }}
+          REVIEW_EMAIL: ${{ secrets.REVIEW_EMAIL }}
+          REVIEW_PHONE: ${{ secrets.REVIEW_PHONE }}
         run: bundle exec fastlane "$LANE"
 
       - uses: actions/upload-artifact@v4

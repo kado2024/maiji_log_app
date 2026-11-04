@@ -94,6 +94,14 @@ platform :ios do
       run_precheck_before_submit: false,
       submit_for_review: ENV["SUBMIT"] == "true",
       automatic_release: false,
+      app_review_information: {
+        first_name: ENV["REVIEW_FIRST_NAME"],
+        last_name: ENV["REVIEW_LAST_NAME"],
+        phone_number: ENV["REVIEW_PHONE"],
+        email_address: ENV["REVIEW_EMAIL"],
+        demo_required: false,
+        notes: File.read(File.expand_path("metadata/review_information/notes.txt", __dir__)).strip,
+      },
       submission_information: {
         add_id_info_uses_idfa: false,
         export_compliance_uses_encryption: false,
