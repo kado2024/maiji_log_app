@@ -1,29 +1,32 @@
 import 'package:flutter/material.dart';
 
+import '../model.dart';
 import '../notifications.dart';
-import '../sky.dart';
+import '../schedule.dart';
 import '../store.dart';
 import '../theme.dart';
+import 'spot_edit.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.store, required this.reminders});
-  final ClipStore store;
-  final HourlyReminders reminders;
+  const SettingsScreen({super.key, required this.store, required this.reminders, required this.clock});
+  final SpotStore store;
+  final SpotReminders reminders;
+  final DateTime Function() clock;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  HourlyReminders get r => widget.reminders;
-  late RangeValues _range = RangeValues(r.startHour.toDouble(), r.endHour.toDouble());
+  SpotReminders get r => widget.reminders;
+  SpotStore get store => widget.store;
 
   Future<void> _toggle(bool on) async {
     if (on) {
-      final ok = await r.enable();
+      final ok = await r.enable(store.spots);
       if (!ok && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('通知が許可されていません。「設定」アプリ → 毎時ログ → 通知 でオンにしてください。'),
+          content: Text('通知が許可されていません。「設定」アプリ → おなじ時刻 → 通知 でオンにしてください。'),
         ));
       }
     } else {
@@ -32,27 +35,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _edit(Spot s) async {
+    await editSpot(context, store: store, now: widget.clock(), existing: s);
+    if (mounted) setState(() {});
+  }
+
   Future<void> _confirmClear() async {
-    final p = Palette.of(context);
-    final yes = await showDialog<bool>(
+    final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('すべてのコマを削除'),
-        content: Text('撮影した ${widget.store.all.length} コマをこの端末から削除します。元に戻せません。'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('キャンセル')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('削除する', style: TextStyle(color: p.accent, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        final p = Palette.of(ctx);
+        return AlertDialog(
+          title: const Text('撮影した動画をすべて削除'),
+          content: Text('撮影した ${store.all.length} 日分の動画をこの端末から削除します。定点時刻の設定は残ります。元に戻せません。'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('キャンセル')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('削除する', style: TextStyle(color: p.accent, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        );
+      },
     );
-    if (yes == true) {
-      await widget.store.clear();
+    if (ok == true) {
+      await store.clear();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('すべてのコマを削除しました')));
         setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('撮影した動画をすべて削除しました')));
       }
     }
   }
@@ -61,61 +71,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final p = Palette.of(context);
     final head = TextStyle(fontSize: 12, letterSpacing: 1.2, color: p.muted, fontWeight: FontWeight.w700);
-    // Cards are Material so list tiles can paint their ink on them.
     Widget card({required Widget child, EdgeInsets? padding}) => Material(
           color: p.surface,
           clipBehavior: Clip.antiAlias,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: p.line)),
           child: padding == null ? child : Padding(padding: padding, child: child),
         );
+    final spots = store.spots;
     return Scaffold(
       appBar: AppBar(title: const Text('設定')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
         children: [
-          Text('通知', style: head),
+          Text('定点時刻', style: head),
           const SizedBox(height: 8),
           card(
             child: Column(children: [
-              SwitchListTile(
-                value: r.enabled,
-                onChanged: _toggle,
-                activeThumbColor: p.accent,
-                title: const Text('毎時00分に知らせる'),
-                subtitle: Text('新しい枠が開いたら通知します', style: TextStyle(color: p.muted, fontSize: 12)),
-              ),
-              if (r.enabled) ...[
-                Divider(height: 1, color: p.line),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Row(children: [
-                    const Text('通知する時間帯'),
-                    const Spacer(),
-                    Text('${two(_range.start.round())}:00 〜 ${two(_range.end.round())}:00',
-                        style: TextStyle(fontFamily: kMono, fontFamilyFallback: [kBody], color: p.ink)),
-                  ]),
-                ),
-                RangeSlider(
-                  values: _range,
-                  min: 0,
-                  max: 23,
-                  divisions: 23,
-                  activeColor: p.accent,
-                  onChanged: (v) => setState(() => _range = v),
-                  onChangeEnd: (v) => r.setRange(v.start.round(), v.end.round()),
+              if (spots.isEmpty)
+                ListTile(title: Text('まだありません。ホームの「定点時刻を決める」から追加できます。', style: TextStyle(color: p.muted, fontSize: 13))),
+              for (final s in spots) ...[
+                if (s != spots.first) Divider(height: 1, color: p.line),
+                ListTile(
+                  title: Text('${s.timeLabel}  ${s.name}'),
+                  subtitle: Text('${store.clipsOf(s.id).length} 日分', style: TextStyle(color: p.muted, fontSize: 12)),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _edit(s),
                 ),
               ],
             ]),
+          ),
+          const SizedBox(height: 24),
+          Text('通知', style: head),
+          const SizedBox(height: 8),
+          card(
+            child: SwitchListTile(
+              value: r.enabled,
+              onChanged: _toggle,
+              activeThumbColor: p.accent,
+              title: const Text('定点時刻に知らせる'),
+              subtitle: Text(
+                  spots.isEmpty ? '定点時刻を追加すると、その時刻に通知します' : '毎日 ${spots.map((s) => s.timeLabel).join('・')} に通知します',
+                  style: TextStyle(color: p.muted, fontSize: 12)),
+            ),
           ),
           const SizedBox(height: 24),
           Text('データ', style: head),
           const SizedBox(height: 8),
           card(
             child: ListTile(
-              title: Text('すべてのコマを削除', style: TextStyle(color: p.accent, fontWeight: FontWeight.w700)),
-              subtitle: Text('いま ${widget.store.all.length} コマ保存されています',
-                  style: TextStyle(color: p.muted, fontSize: 12)),
-              onTap: widget.store.all.isEmpty ? null : _confirmClear,
+              title: Text('撮影した動画をすべて削除', style: TextStyle(color: p.accent, fontWeight: FontWeight.w700)),
+              subtitle: Text('いま ${store.all.length} 日分保存されています', style: TextStyle(color: p.muted, fontSize: 12)),
+              onTap: store.all.isEmpty ? null : _confirmClear,
             ),
           ),
           const SizedBox(height: 24),
@@ -124,9 +130,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           card(
             padding: const EdgeInsets.all(16),
             child: Text(
-              '撮影したコマはこの iPhone の中だけに保存されます。'
+              '撮影した動画はこの iPhone の中だけに保存されます。'
               'サーバーへの送信、アカウント登録、広告、行動の追跡は一切ありません。'
-              'アプリを削除すると、コマもすべて削除されます。',
+              '書き出した動画は、あなたが「写真に保存」や「共有」を選んだときだけアプリの外に出ます。'
+              'アプリを削除すると、撮影した動画もすべて削除されます。',
               style: TextStyle(color: p.ink, height: 1.7),
             ),
           ),
@@ -136,10 +143,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           card(
             padding: const EdgeInsets.all(16),
             child: Text(
-              '・毎時00分に新しい枠が開きます。その1時間に撮れるのは1コマ（2秒）だけです。\n'
-              '・過ぎた枠はあとから撮れません。\n'
-              '・「Vlogを再生」で、その日のコマが時刻順につながって流れます。\n'
-              '・1日に$kStreakMinコマ以上撮った日が続くと「連続」日数が伸びます。',
+              '・毎日撮る「定点時刻」を最大$kMaxSpotsつ決めます（例：7:30 窓の外）。\n'
+              '・撮影できるのは、その時刻の${kOpenBefore.inMinutes}分前から${kOpenAfter.inMinutes}分後まで。1日1回、2秒です。\n'
+              '・撮影画面の「前回と重ねる」で、前回の構図を半透明で重ねて同じ構図に合わせられます。\n'
+              '・定点時刻をタップすると、カレンダーで日ごとに見返せます。「変化を再生」で日付順につながって流れます。\n'
+              '・「日付入り動画に書き出す」で、日付を焼き込んだ1本の動画を作り、写真に保存・共有できます。',
               style: TextStyle(color: p.ink, height: 1.8),
             ),
           ),

@@ -28,52 +28,43 @@ const List<List<Color>> kSky = [
   [Color(0xFF0C0F35), Color(0xFF2A245A)],
 ];
 
-LinearGradient skyGradient(int hour) => LinearGradient(
+/// Sky colors at a fractional hour (e.g. 7.5 = 7:30), blended between hours.
+List<Color> skyAt(double hour) {
+  final h = hour % 24;
+  final a = h.floor() % 24, b = (a + 1) % 24;
+  final t = h - h.floor();
+  return [Color.lerp(kSky[a][0], kSky[b][0], t)!, Color.lerp(kSky[a][1], kSky[b][1], t)!];
+}
+
+LinearGradient skyGradient(num hour) => LinearGradient(
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
-      colors: kSky[hour % 24],
+      colors: skyAt(hour.toDouble()),
     );
-
-const Map<String, List<String>> _prompts = {
-  'night': ['眠れない夜の天井', '枕元のスマホの明かり', '夜中の冷蔵庫', '窓の外の暗さ', '静かな部屋の音'],
-  'morning': ['朝いちばんの光', '今朝の朝ごはん', '鏡の前の寝ぐせ', '玄関を出た瞬間', '通学路・通勤路の景色', '空の色'],
-  'midday': ['いま見ている画面', '手元のノート', '今日のお昼ごはん', '友だちの笑い声', '足元の影', 'いま飲んでいるもの', '窓からの景色'],
-  'afternoon': ['午後の眠気', 'おやつ', '帰り道', '空がオレンジになる瞬間', '今日いちばん歩いた場所', '好きな音楽を流してるところ'],
-  'evening': ['晩ごはん', 'お風呂上がり', '今日の部屋の様子', '明日の準備', '最後に見た空', '布団に入る直前'],
-};
-
-String _bucket(int h) => h < 5
-    ? 'night'
-    : h < 10
-        ? 'morning'
-        : h < 14
-            ? 'midday'
-            : h < 18
-                ? 'afternoon'
-                : 'evening';
-
-int _hash(String s) {
-  var x = 2166136261;
-  for (final c in s.codeUnits) {
-    x ^= c;
-    x = (x * 16777619) & 0xFFFFFFFF;
-  }
-  return x;
-}
-
-/// A stable prompt for a given day and hour; [offset] picks another one.
-String promptFor(String dateKey, int hour, [int offset = 0]) {
-  final list = _prompts[_bucket(hour)]!;
-  return list[(_hash('$dateKey:$hour') + offset) % list.length];
-}
 
 String two(int n) => n.toString().padLeft(2, '0');
 
 String dateKey(DateTime d) => '${d.year}-${two(d.month)}-${two(d.day)}';
 
-const _wd = '月火水木金土日';
-String dayLabel(String key) {
+DateTime parseDateKey(String key) {
   final p = key.split('-').map(int.parse).toList();
-  final d = DateTime(p[0], p[1], p[2]);
-  return '${d.month}/${d.day}(${_wd[d.weekday - 1]})';
+  return DateTime(p[0], p[1], p[2]);
 }
+
+const _wd = '月火水木金土日';
+String weekdayOf(DateTime d) => _wd[d.weekday - 1];
+
+/// "11/9(月)"
+String dayLabel(String key) {
+  final d = parseDateKey(key);
+  return '${d.month}/${d.day}(${weekdayOf(d)})';
+}
+
+/// "2026.11.09 (月)" — the label burned into exported videos.
+String longDayLabel(String key) {
+  final d = parseDateKey(key);
+  return '${d.year}.${two(d.month)}.${two(d.day)} (${weekdayOf(d)})';
+}
+
+/// "08:05" for minutes since midnight.
+String clockLabel(int minuteOfDay) => '${two(minuteOfDay ~/ 60)}:${two(minuteOfDay % 60)}';
