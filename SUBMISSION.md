@@ -87,7 +87,7 @@ API からは設定しないので、画面で入力します。
 
 ## 8.5 4.3／4.2.6 で却下されたあとの再提出（1.0.0）
 
-- **著作権表示（要対応）**：`ios/fastlane/metadata/copyright.txt` は仮に `© 2026 kado2024` にしてある。App Store に表示される権利者名なので、**販売者名（本名や屋号）に書き換えてから**リリースを実行する。
+- **著作権表示**：`ios/fastlane/metadata/copyright.txt` は `© 2026 kado2024`（屋号 kado2024）で確定。
 - App Store Connect の「App Review」で、前回の却下メッセージに返信して大きく変えた点を説明してから再提出する（下書きはリポジトリ外で管理）。
 - 審査メモ（`metadata/review_information/notes.txt`）は新しい確認手順に更新済み。
 - 撮影画面（構図ガイド）のスクリーンショットはシミュレーターでは撮れないので、実機で撮って `ios/fastlane/screenshots/ja/` に追加するとよい。
