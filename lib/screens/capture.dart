@@ -6,18 +6,23 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../exporter.dart';
+import '../model.dart';
 import '../sky.dart';
 import '../store.dart';
 import '../theme.dart';
+import '../widgets.dart';
 
 const kClipDuration = Duration(seconds: 2);
 
-/// Records exactly one 2-second clip for [slot], then lets the user keep it or retake it.
+/// Records the one 2-second clip of [spot] for [date]. The previous day's
+/// frame can be laid over the camera (framing guide) to keep the composition.
 class CaptureScreen extends StatefulWidget {
-  const CaptureScreen({super.key, required this.store, required this.slot, required this.prompt});
-  final ClipStore store;
-  final DateTime slot;
-  final String prompt;
+  const CaptureScreen({super.key, required this.store, required this.spot, required this.date, this.media = const SequenceExporter()});
+  final SpotStore store;
+  final Spot spot;
+  final String date;
+  final SequenceExporter media;
 
   @override
   State<CaptureScreen> createState() => _CaptureScreenState();
@@ -33,8 +38,11 @@ class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProvider
   String _error = '';
   late final AnimationController _progress = AnimationController(vsync: this, duration: kClipDuration);
   XFile? _video;
-  XFile? _thumb;
   VideoPlayerController? _review;
+  late final DayClip? _prev = widget.store.previousFrame(widget.spot.id, widget.date);
+  late bool _ghost = _prev != null;
+  double _ghostOpacity = .4;
+  bool _grid = true;
 
   @override
   void initState() {
@@ -75,7 +83,7 @@ class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProvider
     _cam = null;
     if (mounted) setState(() => _phase = _Phase.starting);
     await old?.dispose();
-    final cam = CameraController(d, ResolutionPreset.high, enableAudio: true);
+    final cam = CameraController(d, ResolutionPreset.veryHigh, enableAudio: true);
     try {
       await cam.initialize();
       await cam.prepareForVideoRecording();
@@ -96,7 +104,7 @@ class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProvider
   void _failFrom(CameraException e) {
     final denied = e.code.contains('AccessDenied') || e.code.contains('AccessRestricted');
     _fail(denied
-        ? 'カメラかマイクの使用が許可されていません。\n「設定」アプリ → 毎時ログ で、カメラとマイクをオンにしてください。'
+        ? 'カメラかマイクの使用が許可されていません。\n「設定」アプリ → おなじ時刻 で、カメラとマイクをオンにしてください。'
         : 'カメラを起動できませんでした（${e.code}）。');
   }
 
@@ -113,7 +121,6 @@ class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProvider
     if (cam == null || _phase != _Phase.ready) return;
     try {
       setState(() => _phase = _Phase.recording);
-      _thumb = await cam.takePicture();
       await cam.startVideoRecording();
       _progress.forward(from: 0);
       await Future.delayed(kClipDuration);
@@ -147,28 +154,30 @@ class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProvider
   }
 
   Future<void> _discard() async {
-    for (final f in [_video, _thumb]) {
-      if (f != null) {
-        final file = File(f.path);
-        if (await file.exists()) await file.delete();
-      }
+    final f = _video;
+    if (f != null) {
+      final file = File(f.path);
+      if (await file.exists()) await file.delete();
     }
     _video = null;
-    _thumb = null;
   }
 
   Future<void> _keep() async {
-    if (_video == null || _thumb == null) return;
+    final v = _video;
+    if (v == null) return;
     setState(() => _phase = _Phase.saving);
     await _review?.pause();
+    // A still from the recorded video itself, so the framing guide lines up
+    // exactly with what the next recording will look like.
+    final thumbPath = '${v.path}.jpg';
+    final ok = await widget.media.frame(v.path, thumbPath);
     await widget.store.add(
-      slot: widget.slot,
-      video: File(_video!.path),
-      thumb: File(_thumb!.path),
-      prompt: widget.prompt,
+      spotId: widget.spot.id,
+      date: widget.date,
+      video: File(v.path),
+      thumb: ok ? File(thumbPath) : null,
     );
     _video = null;
-    _thumb = null;
     if (mounted) Navigator.of(context).pop(true);
   }
 
@@ -189,8 +198,11 @@ class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProvider
     super.dispose();
   }
 
+  bool get _live => _phase == _Phase.ready || _phase == _Phase.recording || _phase == _Phase.starting;
+
   @override
   Widget build(BuildContext context) {
+    final s = widget.spot;
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -202,20 +214,33 @@ class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProvider
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(18),
                   child: Stack(fit: StackFit.expand, children: [
-                    DecoratedBox(decoration: BoxDecoration(gradient: skyGradient(widget.slot.hour))),
+                    DecoratedBox(decoration: BoxDecoration(gradient: skyGradient(s.skyHour))),
                     _preview(),
+                    if (_ghost && _prev != null && _live)
+                      IgnorePointer(
+                        child: Opacity(
+                          opacity: _ghostOpacity,
+                          child: Image.file(widget.store.fileOf(_prev.thumb),
+                              fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox()),
+                        ),
+                      ),
+                    if (_grid && _live) const IgnorePointer(child: CustomPaint(painter: _GridPainter())),
                     _topBar(),
                     Positioned(
                       left: 16,
                       right: 16,
                       bottom: 18,
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('${two(widget.slot.hour)}:00',
+                        Text(s.timeLabel,
                             style: const TextStyle(fontFamily: kDisplay, fontSize: 44, height: 1, color: Colors.white,
                                 shadows: [Shadow(blurRadius: 10, color: Color(0x80000000))])),
-                        Text(widget.prompt,
+                        Text('${dayLabel(widget.date)}  ${s.name}',
                             style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700,
                                 shadows: [Shadow(blurRadius: 10, color: Color(0x80000000))])),
+                        if (_prev != null && _live)
+                          Text(_ghost ? '前回（${dayLabel(_prev.date)}）の構図を重ねています' : '前回：${dayLabel(_prev.date)}',
+                              style: const TextStyle(color: Color(0xD9FFFFFF), fontSize: 12,
+                                  shadows: [Shadow(blurRadius: 8, color: Color(0x80000000))])),
                       ]),
                     ),
                     if (_phase == _Phase.error) _errorView(),
@@ -223,7 +248,7 @@ class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProvider
                 ),
               ),
             ),
-            SizedBox(height: 132, child: _controls()),
+            SizedBox(height: 172, child: _controls()),
           ],
         ),
       ),
@@ -253,28 +278,11 @@ class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProvider
         left: 10,
         right: 10,
         child: Row(children: [
-          _pill(icon: Icons.close_rounded, label: '閉じる', onTap: () => Navigator.of(context).pop(false)),
+          GlassPill(icon: Icons.close_rounded, semantics: '閉じる', onTap: () => Navigator.of(context).pop(false)),
           const Spacer(),
           if (_phase == _Phase.ready && _cams.length > 1)
-            _pill(icon: Icons.cameraswitch_rounded, label: '切り替え', onTap: _flip),
+            GlassPill(icon: Icons.cameraswitch_rounded, semantics: 'カメラ切り替え', onTap: _flip),
         ]),
-      );
-
-  Widget _pill({required IconData icon, required String label, required VoidCallback onTap}) => Semantics(
-        button: true,
-        label: label,
-        child: Material(
-          color: const Color(0x73000000),
-          shape: const StadiumBorder(),
-          child: InkWell(
-            customBorder: const StadiumBorder(),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.all(10),
-              child: Icon(icon, color: Colors.white, size: 22),
-            ),
-          ),
-        ),
       );
 
   Widget _errorView() => Container(
@@ -284,6 +292,30 @@ class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProvider
         child: Text(_error,
             textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.6)),
       );
+
+  Widget _guides() => Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        GlassPill(
+          icon: Icons.layers_outlined,
+          label: '前回と重ねる',
+          active: _ghost,
+          onTap: _prev == null ? null : () => setState(() => _ghost = !_ghost),
+        ),
+        const SizedBox(width: 8),
+        GlassPill(icon: Icons.grid_3x3_rounded, label: 'グリッド', active: _grid, onTap: () => setState(() => _grid = !_grid)),
+        if (_ghost && _prev != null)
+          SizedBox(
+            width: 110,
+            child: Slider(
+              value: _ghostOpacity,
+              min: .15,
+              max: .75,
+              activeColor: Colors.white,
+              inactiveColor: const Color(0x40FFFFFF),
+              semanticFormatterCallback: (v) => '重ねる濃さ ${(v * 100).round()}%',
+              onChanged: (v) => setState(() => _ghostOpacity = v),
+            ),
+          ),
+      ]);
 
   Widget _controls() {
     if (_phase == _Phase.review || _phase == _Phase.saving) {
@@ -307,20 +339,22 @@ class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProvider
             shape: const StadiumBorder(),
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
           ),
-          child: Text(_phase == _Phase.saving ? '保存中…' : 'このコマを使う', style: const TextStyle(fontWeight: FontWeight.w700)),
+          child: Text(_phase == _Phase.saving ? '保存中…' : '今日のぶんにする', style: const TextStyle(fontWeight: FontWeight.w700)),
         ),
       ]);
     }
     final enabled = _phase == _Phase.ready;
     return Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      _guides(),
+      const SizedBox(height: 10),
       Semantics(
         button: true,
         label: '2秒撮影する',
         child: GestureDetector(
           onTap: enabled ? _record : null,
           child: SizedBox(
-            width: 84,
-            height: 84,
+            width: 76,
+            height: 76,
             child: AnimatedBuilder(
               animation: _progress,
               builder: (_, _) => Stack(alignment: Alignment.center, children: [
@@ -334,8 +368,8 @@ class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProvider
                 ),
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  width: _phase == _Phase.recording ? 34 : 64,
-                  height: _phase == _Phase.recording ? 34 : 64,
+                  width: _phase == _Phase.recording ? 30 : 58,
+                  height: _phase == _Phase.recording ? 30 : 58,
                   decoration: BoxDecoration(
                     color: enabled || _phase == _Phase.recording ? const Color(0xFFFF3B30) : const Color(0x66FF3B30),
                     borderRadius: BorderRadius.circular(_phase == _Phase.recording ? 8 : 40),
@@ -346,9 +380,25 @@ class _CaptureScreenState extends State<CaptureScreen> with SingleTickerProvider
           ),
         ),
       ),
-      const SizedBox(height: 10),
-      Text(_phase == _Phase.recording ? '撮影中…' : 'タップで2秒だけ撮影',
-          style: const TextStyle(color: Color(0xCCFFFFFF), fontSize: 13)),
+      const SizedBox(height: 6),
+      Text(_phase == _Phase.recording ? '撮影中…' : 'タップで2秒撮影', style: const TextStyle(color: Color(0xCCFFFFFF), fontSize: 12)),
     ]);
   }
+}
+
+class _GridPainter extends CustomPainter {
+  const _GridPainter();
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()
+      ..color = const Color(0x66FFFFFF)
+      ..strokeWidth = 1;
+    for (final f in [1 / 3, 2 / 3]) {
+      canvas.drawLine(Offset(size.width * f, 0), Offset(size.width * f, size.height), p);
+      canvas.drawLine(Offset(0, size.height * f), Offset(size.width, size.height * f), p);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

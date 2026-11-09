@@ -5,15 +5,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-import 'sky.dart';
+import 'model.dart';
 
-/// Hourly "a new slot opened" reminders, scheduled as daily repeating
-/// local notifications at hh:00 within the user's chosen hours.
-class HourlyReminders extends ChangeNotifier {
+/// Text of the daily reminder for a spot.
+({String title, String body}) reminderText(Spot s) =>
+    (title: '${s.timeLabel}「${s.name}」の時間です', body: '前回と同じ構図で、今日の${s.name}を2秒だけ残しましょう。');
+
+/// One daily local notification per spot, exactly at the spot's time.
+class SpotReminders extends ChangeNotifier {
   final _plugin = FlutterLocalNotificationsPlugin();
   bool enabled = false;
-  int startHour = 8;
-  int endHour = 23; // inclusive
+  bool _ready = false;
 
   Future<void> init() async {
     tzdata.initializeTimeZones();
@@ -33,55 +35,47 @@ class HourlyReminders extends ChangeNotifier {
       ),
     );
     final p = await SharedPreferences.getInstance();
-    enabled = p.getBool('notify') ?? false;
-    startHour = p.getInt('notifyStart') ?? 8;
-    endHour = p.getInt('notifyEnd') ?? 23;
+    enabled = p.getBool('spotNotify') ?? false;
+    _ready = true;
     notifyListeners();
   }
 
   /// Asks for permission (first time only) and turns reminders on.
-  Future<bool> enable() async {
+  Future<bool> enable(List<Spot> spots) async {
     final ios = _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
     final ok = await ios?.requestPermissions(alert: true, sound: true, badge: false) ?? false;
     enabled = ok;
     await _persist();
-    await reschedule();
+    await reschedule(spots);
     return ok;
   }
 
   Future<void> disable() async {
     enabled = false;
     await _persist();
-    await _plugin.cancelAll();
-  }
-
-  Future<void> setRange(int start, int end) async {
-    startHour = start;
-    endHour = end;
-    await _persist();
-    await reschedule();
+    if (_ready) await _plugin.cancelAll();
   }
 
   Future<void> _persist() async {
     final p = await SharedPreferences.getInstance();
-    await p.setBool('notify', enabled);
-    await p.setInt('notifyStart', startHour);
-    await p.setInt('notifyEnd', endHour);
+    await p.setBool('spotNotify', enabled);
     notifyListeners();
   }
 
-  Future<void> reschedule() async {
+  Future<void> reschedule(List<Spot> spots) async {
+    if (!_ready) return;
     await _plugin.cancelAll();
     if (!enabled) return;
     final now = tz.TZDateTime.now(tz.local);
-    for (var h = startHour; h <= endHour; h++) {
-      var at = tz.TZDateTime(tz.local, now.year, now.month, now.day, h);
+    for (final s in spots) {
+      var at = tz.TZDateTime(tz.local, now.year, now.month, now.day, s.hour, s.minute % 60);
       if (!at.isAfter(now)) at = at.add(const Duration(days: 1));
+      final t = reminderText(s);
       await _plugin.zonedSchedule(
-        id: h,
+        id: s.id,
         scheduledDate: at,
-        title: '${two(h)}:00 の枠が開きました',
-        body: 'この1時間の1コマを撮ろう。お題：${promptFor('notify', h)}',
+        title: t.title,
+        body: t.body,
         notificationDetails: const NotificationDetails(
           iOS: DarwinNotificationDetails(presentAlert: true, presentSound: true),
         ),
