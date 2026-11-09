@@ -189,7 +189,7 @@ final class TeitenMediaPlugin: NSObject, FlutterPlugin {
       l.frame = CGRect(x: 60, y: 130, width: CGFloat(img.width), height: CGFloat(img.height))
       l.opacity = 0
       let a = CAKeyframeAnimation(keyPath: "opacity")
-      a.calcMode = .discrete
+      a.calculationMode = .discrete
       a.values = [0, 1, 0]
       a.keyTimes = [0, NSNumber(value: range.start.seconds / totalSec), NSNumber(value: range.end.seconds / totalSec), 1]
       a.duration = totalSec
