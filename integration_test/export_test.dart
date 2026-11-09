@@ -1,6 +1,8 @@
 // On-device check of the native video work (export / frame).
-// Needs real clips; run on a simulator or device:
-//   flutter test integration_test -d <device> --dart-define=CLIPS=/abs/a.mp4,/abs/b.mp4
+// Needs real clips; run on a simulator (it can read host paths) or device:
+//   flutter drive --driver=test_driver/integration_test.dart \
+//     --target=integration_test/export_test.dart -d <device> \
+//     --dart-define=CLIPS=/abs/a.mp4,/abs/b.mp4 --dart-define=OUT=/abs/outdir
 import 'dart:io';
 
 import 'package:flutter/services.dart';

@@ -96,9 +96,8 @@ final class TeitenMediaPlugin: NSObject, FlutterPlugin {
     guard let track = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
       return done(FlutterError(code: "compose", message: "no track", details: nil))
     }
-    let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
     var cursor = CMTime.zero
-    var labels: [(String, CMTimeRange)] = []
+    var segments: [Segment] = []
     for item in items {
       guard let path = item["path"] as? String else { continue }
       let asset = AVURLAsset(url: URL(fileURLWithPath: path))
@@ -109,22 +108,40 @@ final class TeitenMediaPlugin: NSObject, FlutterPlugin {
       do {
         try track.insertTimeRange(CMTimeRange(start: .zero, duration: dur), of: src, at: cursor)
       } catch { continue }
-      layer.setTransform(fill(src), at: cursor)
-      labels.append(((item["label"] as? String) ?? "", CMTimeRange(start: cursor, duration: dur)))
+      segments.append(Segment(
+        range: CMTimeRange(start: cursor, duration: dur),
+        orientation: orientation(of: src.preferredTransform),
+        label: textImage((item["label"] as? String) ?? "", size: 76, weight: .heavy).map { CIImage(cgImage: $0) }))
       cursor = cursor + dur
     }
-    guard cursor.seconds > 0 else {
+    guard cursor.seconds > 0, !segments.isEmpty else {
       return done(FlutterError(code: "compose", message: "no readable clips", details: nil))
     }
 
-    let instruction = AVMutableVideoCompositionInstruction()
-    instruction.timeRange = CMTimeRange(start: .zero, duration: cursor)
-    instruction.layerInstructions = [layer]
-    let video = AVMutableVideoComposition()
+    // Per-frame Core Image composition: orient + fill the frame, then the
+    // date of the day on screen and the spot title. (Core Image instead of
+    // AVVideoCompositionCoreAnimationTool, which is unreliable on Simulator.)
+    let rect = CGRect(origin: .zero, size: renderSize)
+    let shade = CIFilter(name: "CILinearGradient", parameters: [
+      "inputPoint0": CIVector(x: 0, y: 0),
+      "inputPoint1": CIVector(x: 0, y: 560),
+      "inputColor0": CIColor(red: 0, green: 0, blue: 0, alpha: 0.55),
+      "inputColor1": CIColor(red: 0, green: 0, blue: 0, alpha: 0),
+    ])?.outputImage?.cropped(to: rect)
+    let titleImage = textImage(title, size: 44, weight: .semibold).map { CIImage(cgImage: $0) }
+    let black = CIImage(color: .black).cropped(to: rect)
+
+    let video = AVMutableVideoComposition(asset: comp) { req in
+      let t = req.compositionTime
+      let seg = segments.first { $0.range.containsTime(t) } ?? segments.last!
+      var img = fill(req.sourceImage.oriented(seg.orientation)).composited(over: black)
+      if let shade = shade { img = shade.composited(over: img) }
+      if let title = titleImage { img = title.transformed(by: CGAffineTransform(translationX: 64, y: 250)).composited(over: img) }
+      if let label = seg.label { img = label.transformed(by: CGAffineTransform(translationX: 60, y: 130)).composited(over: img) }
+      req.finish(with: img.cropped(to: rect), context: nil)
+    }
     video.renderSize = renderSize
     video.frameDuration = CMTime(value: 1, timescale: 30)
-    video.instructions = [instruction]
-    video.animationTool = overlay(title: title, labels: labels, total: cursor)
 
     guard let session = AVAssetExportSession(asset: comp, presetName: AVAssetExportPresetHighestQuality) else {
       return done(FlutterError(code: "export", message: "no session", details: nil))
@@ -142,64 +159,34 @@ final class TeitenMediaPlugin: NSObject, FlutterPlugin {
     }
   }
 
-  /// Orients a source track upright and scales it to fill the portrait frame.
-  static func fill(_ src: AVAssetTrack) -> CGAffineTransform {
-    let t = src.preferredTransform
-    let r = CGRect(origin: .zero, size: src.naturalSize).applying(t)
-    let size = CGSize(width: abs(r.width), height: abs(r.height))
-    let scale = max(renderSize.width / size.width, renderSize.height / size.height)
-    let dx = (renderSize.width - size.width * scale) / 2
-    let dy = (renderSize.height - size.height * scale) / 2
-    return t
-      .concatenating(CGAffineTransform(translationX: -r.minX, y: -r.minY))
-      .concatenating(CGAffineTransform(scaleX: scale, y: scale))
-      .concatenating(CGAffineTransform(translationX: dx, y: dy))
+  struct Segment {
+    let range: CMTimeRange
+    let orientation: CGImagePropertyOrientation
+    let label: CIImage?
   }
 
-  /// Text burned into the video: the spot (time + name) all the time,
-  /// and the date of whichever day is on screen.
-  static func overlay(title: String, labels: [(String, CMTimeRange)], total: CMTime) -> AVVideoCompositionCoreAnimationTool {
-    let frame = CGRect(origin: .zero, size: renderSize)
-    let parent = CALayer()
-    parent.frame = frame
-    let videoLayer = CALayer()
-    videoLayer.frame = frame
-    parent.addSublayer(videoLayer)
-
-    // Soft shade at the bottom so the text stays readable on bright frames.
-    let shade = CAGradientLayer()
-    shade.frame = CGRect(x: 0, y: 0, width: renderSize.width, height: 520)
-    shade.colors = [UIColor.black.withAlphaComponent(0.55).cgColor, UIColor.clear.cgColor]
-    shade.startPoint = CGPoint(x: 0.5, y: 0)
-    shade.endPoint = CGPoint(x: 0.5, y: 1)
-    parent.addSublayer(shade)
-
-    // Core Animation's origin is bottom-left here.
-    if let img = textImage(title, size: 44, weight: .semibold) {
-      let l = CALayer()
-      l.contents = img
-      l.frame = CGRect(x: 64, y: 250, width: CGFloat(img.width), height: CGFloat(img.height))
-      parent.addSublayer(l)
+  /// How to turn a track's stored pixels upright (from its preferredTransform).
+  static func orientation(of t: CGAffineTransform) -> CGImagePropertyOrientation {
+    switch (t.a, t.b, t.c, t.d) {
+    case (0, 1, -1, 0): return .right
+    case (0, -1, 1, 0): return .left
+    case (-1, 0, 0, -1): return .down
+    case (-1, 0, 0, 1): return .upMirrored
+    case (0, 1, 1, 0): return .leftMirrored
+    case (0, -1, -1, 0): return .rightMirrored
+    default: return .up
     }
-    let totalSec = total.seconds
-    for (text, range) in labels {
-      guard let img = textImage(text, size: 76, weight: .heavy) else { continue }
-      let l = CALayer()
-      l.contents = img
-      l.frame = CGRect(x: 60, y: 130, width: CGFloat(img.width), height: CGFloat(img.height))
-      l.opacity = 0
-      let a = CAKeyframeAnimation(keyPath: "opacity")
-      a.calculationMode = .discrete
-      a.values = [0, 1, 0]
-      a.keyTimes = [0, NSNumber(value: range.start.seconds / totalSec), NSNumber(value: range.end.seconds / totalSec), 1]
-      a.duration = totalSec
-      a.beginTime = AVCoreAnimationBeginTimeAtZero
-      a.isRemovedOnCompletion = false
-      a.fillMode = .forwards
-      l.add(a, forKey: "show")
-      parent.addSublayer(l)
-    }
-    return AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
+  }
+
+  /// Scales an upright frame to fill the portrait render size (center crop).
+  static func fill(_ img: CIImage) -> CIImage {
+    let e = img.extent
+    let scale = max(renderSize.width / e.width, renderSize.height / e.height)
+    let s = img.transformed(by: CGAffineTransform(translationX: -e.minX, y: -e.minY))
+      .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    let dx = (renderSize.width - e.width * scale) / 2
+    let dy = (renderSize.height - e.height * scale) / 2
+    return s.transformed(by: CGAffineTransform(translationX: dx, y: dy))
   }
 
   /// Renders text with a soft shadow into an image (reliable for Japanese text).
