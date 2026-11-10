@@ -91,6 +91,7 @@ platform :ios do
       metadata_path: "./fastlane/metadata",
       screenshots_path: "./fastlane/screenshots",
       overwrite_screenshots: true,
+      app_rating_config_path: "./fastlane/app_rating_config.json",
       run_precheck_before_submit: false,
       submit_for_review: ENV["SUBMIT"] == "true",
       automatic_release: false,
