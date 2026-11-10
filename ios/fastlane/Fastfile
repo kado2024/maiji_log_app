@@ -1,4 +1,4 @@
-# Build, sign (automatic, via App Store Connect API key) and upload 毎時ログ.
+# Build, sign (automatic, via App Store Connect API key) and upload おなじ時刻 (formerly 毎時ログ).
 #
 # Required environment variables:
 #   ASC_KEY_ID, ASC_ISSUER_ID  App Store Connect API key (role: Admin — needed for cloud-managed distribution signing)

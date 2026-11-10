@@ -1,4 +1,4 @@
-# App Store 提出手順（毎時ログ）
+# App Store 提出手順（おなじ時刻 ※旧名 毎時ログ）
 
 iOSアプリのビルドと提出には **macOS（Xcode）** と **Apple Developer Program（有料・年会費）** が必要です。
 このリポジトリには、Macを持っていなくても GitHub Actions の Mac 環境でビルド→アップロード→審査提出まで行う仕組みを入れてあります。
@@ -28,7 +28,7 @@ grep -rl "com.kado2024.maijilog" ios | xargs sed -i "" "s/com\.kado2024\.maijilo
 ## 3. Apple Developer で App ID を登録
 
 https://developer.apple.com/account/resources/identifiers → ＋ → App IDs → App
-- Description：毎時ログ
+- Description：おなじ時刻（旧 毎時ログ）
 - Bundle ID（Explicit）：手順1で決めたもの
 - Capabilities：追加不要（通知は端末内のローカル通知なので Push Notifications も不要）
 
@@ -36,7 +36,7 @@ https://developer.apple.com/account/resources/identifiers → ＋ → App IDs �
 
 https://appstoreconnect.apple.com → アプリ → ＋ → 新規App
 - プラットフォーム：iOS
-- 名前：`毎時ログ - 1時間に2秒の日記`（使われていたら少し変える。`metadata/ja/name.txt` も同じにする）
+- 名前：`おなじ時刻 - 毎日同じ時間の定点ビデオ`（使われていたら少し変える。`metadata/ja/name.txt` も同じにする）
 - プライマリ言語：日本語
 - バンドルID：手順3のもの
 - SKU：`maijilog001` など任意
@@ -68,11 +68,13 @@ GitHub → Actions → **iOS release** → Run workflow → lane：`beta`
 10〜20分でビルドが App Store Connect に届きます（処理にさらに10〜30分）。
 App Store Connect → TestFlight で自分をテスターに追加し、iPhone の TestFlight アプリからインストールして次を確認します。
 
-- [ ] カメラとマイクの許可ダイアログが出て、2秒で録画が止まる
-- [ ] 「このコマを使う」でホームのマスに入る／撮り直しで置き換わる
-- [ ] Vlog再生（タップで前後移動、音のオン/オフ）
-- [ ] 設定で通知をオン → 次の00分に通知が来る
-- [ ] アプリを終了して開き直してもコマが残っている
+- [ ] 「最初の定点時刻を決める」→「いまの時刻にする」→ 保存で、カードに「いま撮る」が出る
+- [ ] カメラとマイクの許可ダイアログが出て、2秒で録画が止まる →「今日のぶんにする」でカードに入る
+- [ ] 2日目以降、撮影画面の「前回と重ねる」で前回のコマが半透明に重なる（濃さスライダー・グリッド）
+- [ ] カードをタップ → カレンダー表示、「変化を再生」（速さ切り替え）、「2日を比べる」
+- [ ] 「日付入り動画に書き出す」→「写真に保存」で写真アプリに日付入りの動画が入る／「共有」でシェアシートが出る
+- [ ] 設定で通知をオン → 定点時刻に通知が来る
+- [ ] アプリを終了して開き直しても記録が残っている
 
 ## 8. App Store Connect で手入力する項目
 
@@ -82,6 +84,13 @@ API からは設定しないので、画面で入力します。
 - **年齢制限指定**：質問にすべて「なし／いいえ」で回答（`ios/fastlane/app_rating_config.json` でも同じ内容を送る。未入力だと審査提出 API が失敗する）
 - **価格および配信状況**：無料、配信する国（日本など）
 - **App Review に関する情報**：連絡先の氏名・電話番号・メール（審査メモは自動で入ります）
+
+## 8.5 4.3／4.2.6 で却下されたあとの再提出（1.0.0）
+
+- **著作権表示**：`ios/fastlane/metadata/copyright.txt` は `© 2026 kado2024`（屋号 kado2024）で確定。
+- App Store Connect の「App Review」で、前回の却下メッセージに返信して大きく変えた点を説明してから再提出する（下書きはリポジトリ外で管理）。
+- 審査メモ（`metadata/review_information/notes.txt`）は新しい確認手順に更新済み。
+- 撮影画面（構図ガイド）のスクリーンショットはシミュレーターでは撮れないので、実機で撮って `ios/fastlane/screenshots/ja/` に追加するとよい。
 
 ## 9. 審査に提出
 

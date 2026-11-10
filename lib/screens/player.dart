@@ -4,18 +4,30 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../model.dart';
 import '../sample_scene.dart';
+import '../schedule.dart';
 import '../sky.dart';
 import '../store.dart';
 import '../theme.dart';
-import 'capture.dart' show kClipDuration;
+import '../widgets.dart';
 
-/// Plays a day's clips back to back, 2 seconds each, like a story reel.
+/// Plays one spot's days back to back: the same time, day after day.
 class PlayerScreen extends StatefulWidget {
-  const PlayerScreen({super.key, required this.store, required this.clips, this.start = 0, this.autoplay = true});
-  final ClipStore store;
-  final List<HourClip> clips;
+  const PlayerScreen({
+    super.key,
+    required this.store,
+    required this.spot,
+    required this.clips,
+    this.start = 0,
+    this.secondsPerClip = 1.0,
+    this.autoplay = true,
+  });
+  final SpotStore store;
+  final Spot spot;
+  final List<DayClip> clips;
   final int start;
+  final double secondsPerClip;
   final bool autoplay;
 
   @override
@@ -23,16 +35,18 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderStateMixin {
-  late int _i = widget.start;
-  late final AnimationController _bar = AnimationController(vsync: this, duration: kClipDuration)
+  late int _i = widget.start.clamp(0, widget.clips.length - 1);
+  late double _speed = widget.secondsPerClip;
+  late final AnimationController _bar = AnimationController(vsync: this, duration: _dur)
     ..addStatusListener((s) {
       if (s == AnimationStatus.completed) _next();
     });
   final Map<int, VideoPlayerController> _videos = {};
-  bool _muted = false;
+  bool _muted = true;
   bool _ended = false;
 
-  List<HourClip> get clips => widget.clips;
+  Duration get _dur => Duration(milliseconds: (_speed * 1000).round());
+  List<DayClip> get clips => widget.clips;
 
   @override
   void initState() {
@@ -55,7 +69,6 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
   }
 
   Future<void> _show(int i) async {
-    // Stop and release everything except the current and next clip.
     for (final k in _videos.keys.toList()) {
       if (k != i && k != i + 1) {
         _videos.remove(k)?.dispose();
@@ -77,7 +90,7 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     }
     if (widget.autoplay) _bar.forward(from: 0);
     setState(() {});
-    unawaited(_controller(i + 1)); // preload
+    unawaited(_controller(i + 1));
   }
 
   void _next() {
@@ -98,6 +111,13 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     }
   }
 
+  void _cycleSpeed() {
+    final k = kSpeeds.indexOf(_speed);
+    setState(() => _speed = kSpeeds[(k + 1) % kSpeeds.length]);
+    _bar.duration = _dur;
+    if (!_ended) _bar.forward(from: _bar.value);
+  }
+
   @override
   void dispose() {
     WakelockPlus.disable().catchError((_) {});
@@ -111,7 +131,7 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     final c = clips[_i];
-    final day = c.isSample ? '見本' : dayLabel(c.date);
+    final s = widget.spot;
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -126,25 +146,29 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                 d.localPosition.dx < w / 3 ? _prev() : _next();
               },
               child: Stack(fit: StackFit.expand, children: [
-                DecoratedBox(decoration: BoxDecoration(gradient: skyGradient(c.hour))),
+                DecoratedBox(decoration: BoxDecoration(gradient: skyGradient(s.skyHour))),
                 _frame(c),
                 const DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        stops: [.6, 1],
-                        colors: [Color(0x00000000), Color(0x80000000)]),
+                        stops: [0, .14, .55, 1],
+                        colors: [Color(0x73000000), Color(0x00000000), Color(0x00000000), Color(0x8C000000)]),
                   ),
                 ),
-                Positioned(top: 10, left: 10, right: 10, child: _bars()),
+                Positioned(top: 10, left: 12, right: 12, child: _progress()),
                 Positioned(
-                  top: 22,
+                  top: 24,
                   right: 10,
                   child: Row(children: [
-                    _chip(_muted ? '音 OFF' : '音 ON', _toggleMute),
+                    GlassPill(label: speedLabel(_speed), onTap: _cycleSpeed, semantics: '再生の速さを変える'),
                     const SizedBox(width: 6),
-                    _chip('閉じる', () => Navigator.of(context).pop()),
+                    if (!c.isSample) ...[
+                      GlassPill(label: _muted ? '音 OFF' : '音 ON', onTap: _toggleMute),
+                      const SizedBox(width: 6),
+                    ],
+                    GlassPill(label: '閉じる', onTap: () => Navigator.of(context).pop()),
                   ]),
                 ),
                 Positioned(
@@ -152,13 +176,15 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
                   right: 16,
                   bottom: 20,
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('${two(c.hour)}:00',
-                        style: const TextStyle(fontFamily: kDisplay, fontSize: 48, height: 1, color: Colors.white,
+                    Text('${s.timeLabel}  ${s.name}',
+                        style: const TextStyle(color: Color(0xE6FFFFFF), fontSize: 15, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(c.isSample ? '${c.sampleMonth}月' : dayLabel(c.date),
+                        style: const TextStyle(fontFamily: kDisplay, fontSize: 44, height: 1.05, color: Colors.white,
                             shadows: [Shadow(blurRadius: 12, color: Color(0x80000000))])),
-                    const SizedBox(height: 4),
-                    Text(c.prompt,
-                        style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
-                    Text(day, style: const TextStyle(fontFamily: kMono, fontFamilyFallback: [kBody], color: Color(0xCCFFFFFF), fontSize: 12)),
+                    if (!c.isSample)
+                      Text(c.date.substring(0, 4),
+                          style: const TextStyle(fontFamily: kMono, fontFamilyFallback: [kBody], color: Color(0xCCFFFFFF), fontSize: 12)),
                   ]),
                 ),
                 if (_ended) _endCard(),
@@ -170,18 +196,17 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _frame(HourClip c) {
+  Widget _frame(DayClip c) {
     if (c.isSample) {
       return AnimatedBuilder(
         animation: _bar,
-        builder: (_, child) => Transform.scale(scale: 1 + .09 * _bar.value, child: child),
-        child: SampleScene(hour: c.hour, kind: c.sampleScene!),
+        builder: (_, child) => Transform.scale(scale: 1 + .03 * _bar.value, child: child),
+        child: SampleScene(month: c.sampleMonth!),
       );
     }
     final v = _videos[_i];
     if (v == null || !v.value.isInitialized) {
-      return Image.file(widget.store.fileOf(c.thumb), fit: BoxFit.cover, gaplessPlayback: true,
-          errorBuilder: (_, _, _) => const SizedBox());
+      return ClipStill(store: widget.store, clip: c, spot: widget.spot);
     }
     return FittedBox(
       fit: BoxFit.cover,
@@ -189,50 +214,36 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _bars() => AnimatedBuilder(
+  Widget _progress() => AnimatedBuilder(
         animation: _bar,
-        builder: (_, _) => Row(children: [
-          for (var j = 0; j < clips.length; j++) ...[
-            if (j > 0) const SizedBox(width: 3),
+        builder: (_, _) {
+          final f = _ended ? 1.0 : (_i + _bar.value) / clips.length;
+          return Row(children: [
             Expanded(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(2),
                 child: LinearProgressIndicator(
-                  minHeight: 3,
-                  value: j < _i || _ended ? 1 : (j == _i ? _bar.value : 0),
-                  color: Colors.white,
-                  backgroundColor: const Color(0x4DFFFFFF),
-                ),
+                    minHeight: 3, value: f, color: Colors.white, backgroundColor: const Color(0x4DFFFFFF)),
               ),
             ),
-          ],
-        ]),
-      );
-
-  Widget _chip(String label, VoidCallback onTap) => Material(
-        color: const Color(0x73000000),
-        shape: const StadiumBorder(),
-        child: InkWell(
-          customBorder: const StadiumBorder(),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            child: Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
-          ),
-        ),
+            const SizedBox(width: 8),
+            Text('${_i + 1} / ${clips.length}',
+                style: const TextStyle(fontFamily: kMono, fontFamilyFallback: [kBody], color: Colors.white, fontSize: 11)),
+          ]);
+        },
       );
 
   Widget _endCard() {
-    final first = clips.first;
+    final first = clips.first, last = clips.last;
+    final range = first.isSample ? '1月 〜 12月' : '${dayLabel(first.date)} 〜 ${dayLabel(last.date)}';
     return Container(
       color: const Color(0x8C000000),
       alignment: Alignment.center,
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text('${clips.length}コマ ・ ${clips.length * 2}秒',
-            style: const TextStyle(fontFamily: kDisplay, fontSize: 28, color: Colors.white)),
+        Text(first.isSample ? '12か月' : '${clips.length}日分',
+            style: const TextStyle(fontFamily: kDisplay, fontSize: 30, color: Colors.white)),
         const SizedBox(height: 6),
-        Text('${first.isSample ? '見本の1日' : dayLabel(first.date)}のVlog',
-            style: const TextStyle(color: Color(0xD9FFFFFF))),
+        Text('${widget.spot.timeLabel} の変化  $range', style: const TextStyle(color: Color(0xD9FFFFFF))),
         const SizedBox(height: 16),
         FilledButton(
           onPressed: () => _show(0),
